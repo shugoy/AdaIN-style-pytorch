@@ -1,6 +1,7 @@
 import torch
-# import torch.nn as nn
-import torch.legacy.nn as nn
+import torch.nn as nn
+# import torch.legacy.nn as nn
+from torch.autograd import Variable
 from BatchNormalization import BatchNormalization
 
 # Implements adaptive instance normalization (AdaIN) as described in the paper:
@@ -91,6 +92,8 @@ class AdaIN(nn.Module):
         print "targetMean.data.size() {0}".format(targetMean.data.size())
         print "targetStd.data.size() {0}".format(targetStd.data.size())
         out = bn.updateOutput(contentView.data)
+        out = out.view(1, 512, Hc, Wc)
+        out = Variable(out)
         return out
 
         
