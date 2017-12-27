@@ -2,9 +2,7 @@ import argparse
 import os
 import sys
 import time
-
 from PIL import Image
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,38 +14,31 @@ from torch.utils.serialization import load_lua
 from torchvision import datasets
 from torchvision import transforms
 from torchvision import models
-
-# from vgg import Vgg16
-# import vgg
 from AdaIN import AdaIN
 
 # def main():
 parser = argparse.ArgumentParser()
 parser.add_argument("--contentImg", default="images/brad_pitt.jpg")
 parser.add_argument("--styleImg", default="images/picasso_self_portrait.jpg")
-parser.add_argument("--outputImg", default="images/out.jpg")
-parser.add_argument("--vgg", default="models/vgg_normalised.t7")
-parser.add_argument("--decoder", default="models/decoder.t7")
+parser.add_argument("--outputImg", default=None)
+parser.add_argument("--vgg", default="models/vgg_normalised.pth")
+parser.add_argument("--decoder", default="models/decoder.pth")
 parser.add_argument("--cuda", default=False)
 parser.add_argument("--alpha", default=1)#, 'The weight that controls the degree of stylization. Should be between 0 and 1')
 args = parser.parse_args()
 
-# vgg = models.vgg16(pretrained=True).features
-# vgg = load_lua(args.vgg)
-import vgg_normalised
-vgg = vgg_normalised.vgg_normalised
-vgg.load_state_dict(torch.load('vgg_normalised.pth'))
-# for i in reversed(range(31,52)):
-#     vgg.reduce(i)
-vgg = nn.Sequential(
-            *(vgg[i] for i in range(31)))
-# print vgg
-# vgg.features = nn.Sequential(
-#                     # stop at conv4
-#                     *list(vgg.features.children())[:-3]
-#                 )
-# vgg.eval()
+# import vgg_normalised
+# vgg = vgg_normalised.vgg_normalised
+# vgg.load_state_dict(torch.load(args.vgg))
+# vgg = nn.Sequential(*(vgg[i] for i in range(31)))
 # vgg.cuda.
+import vgg
+vgg = vgg.Vgg16(requires_grad=False)
+
+# decode
+from decoder import Decoder
+decoder = Decoder()
+decoder.model.load_state_dict(torch.load(args.decoder))
 
 ## load images
 contentImg = Image.open(args.contentImg)
@@ -56,14 +47,10 @@ styleImg = Image.open(args.styleImg)
 content_transform = transforms.Compose([
     transforms.Scale(512),
     transforms.ToTensor(),
-    # transforms.Lambda(lambda x: x.mul(255))
 ])
 content = content_transform(contentImg)
 style   = content_transform(styleImg)
-# print "content_transform {0}".format(content.size())
 
-# content = Variable(content, volatile=True, requires_grad=False)
-# style   = Variable(style, volatile=True, requires_grad=False)
 content = Variable(content)
 style   = Variable(style)
 
@@ -74,39 +61,38 @@ if args.cuda:
     content = content.cuda()
     style   = style.cuda()
 
-print "content.size() {0}".format(content.size()) #torch.Size([1, 3, 400, 760])
-# print "style.size() {0}".format(style.size())  #torch.Size([1, 3, 1014, 1280])
 print "vgg.forward.."
-styleFeature   = vgg.forward(style)
-contentFeature = vgg.forward(content)
-print "contentFeature {0}".format(contentFeature.size())
+styleFeature   = vgg.forward(style).relu4_3
+contentFeature = vgg.forward(content).relu4_3
+print (styleFeature.size())
+print (contentFeature.size())
 
 # AdaIN
+print "adaIN.forward.."
 adain = AdaIN(contentFeature.size(1), False, 1e-5)
-targetFeature = adain.updateOutput(contentFeature, styleFeature)
-# targetFeature = contentFeature.clone()
-# targetFeature = args.alpha * targetFeature + (1 - args.alpha) * contentFeature
-
-# decode
-# decoder = load_lua(args.decoder)
-import decoder
-decoder = decoder.decoder
-decoder.load_state_dict(torch.load('decoder.pth'))
+targetFeature = adain.forward(contentFeature, styleFeature)
+alpha = float(args.alpha)
+targetFeature = alpha * targetFeature + (1 - alpha) * contentFeature
 
 print "decoder.forward.."
 outputImg = decoder.forward(targetFeature)
-# print "decoder.forward {0}".format(outputImg.size())
 outputImg = outputImg.squeeze() 
-# print "outputImg.size {0}".format(outputImg.size())
 
 outputImg = outputImg.clamp(min=0, max=1.0)
-
-trans2img = transforms.Compose([
-    transforms.ToPILImage(),
-])
+trans2img = transforms.Compose([transforms.ToPILImage()])
 img = trans2img(outputImg.data)
 
-# img.show()
-img.save(args.outputImg)
+if args.outputImg is None:
+    path_c, file_c = os.path.split(args.contentImg)
+    name_c, ext_c  = os.path.splitext(file_c)
+    path_s, file_s = os.path.split(args.styleImg)
+    name_s, ext_s  = os.path.splitext(file_s)
+    outname = "out/"+name_c+"_"+name_s
+    if alpha < 1.0:
+        outname += "_"+str(alpha)
+    outpath = outname + ext_c
+else:
+    outpath = args.outputImg
 
-print "finished!"
+img.save(outpath)
+print "saved "+outpath

@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 # import torch.legacy.nn as nn
 from torch.autograd import Variable
-from BatchNormalization import BatchNormalization
+from torch.nn import Parameter
+# from BatchNormalization import BatchNormalization
 
 # Implements adaptive instance normalization (AdaIN) as described in the paper:
 
@@ -11,12 +12,10 @@ from BatchNormalization import BatchNormalization
 
 class AdaIN(nn.Module):
 
-    def __init__(self, nOutput, disabled, eps):
+    def __init__(self, nOutput, disabled=False, eps=1e-5):
         # __init__(self, nOutput, disabled, eps)
         super(AdaIN, self).__init__()
-
         self.eps = eps or 1e-5
-
         self.nOutput = nOutput
         self.batchSize = -1
         self.disabled = disabled
@@ -25,7 +24,7 @@ class AdaIN(nn.Module):
     #     return self:updateOutput(input)
     # end
 
-    def updateOutput(self, content, style): # {content, style}
+    def forward(self, content, style): # {content, style}
         # content = input[1]
         # style   = input[2]
 
@@ -55,46 +54,20 @@ class AdaIN(nn.Module):
 
         # -- compute target mean and standard deviation from the style input
         styleView = style.view((N, self.nOutput, -1))
-        print styleView.size()
-        # targetStd = torch.std(style, dim=3)
         targetStd = styleView.std(2).view(-1)
-        # print targetStd
-        # targetMean = torch.mean(style, dim=3)
         targetMean = styleView.mean(2).view(-1)
-        # print targetMean
-
-        # -- construct the internal BN layer
-        # if N != self.batchSize or (self.BatchNormalization() and self.type() != self.BatchNormalization().type()):
-        #     self.BatchNormalization = nn.SpatialBatchNormalization(N * self.nOutput, self.eps)
-        #     self.BatchNormalization.type(self.type())
-        #     self.batchSize = N
-
-        # -- set affine params for the internal BN layer
-        # self.bn.weight.copy(targetStd)
-        # self.bn.bias.copy(targetMean)
-
-        # contentView = content.view(1, N * self.nOutput, Hc, Wc)
-        # self.bn.training()
-        # self.output = self.bn.forward(contentView).viewAs(content)
-        # return self.output
-
-        # bn = nn.SpatialBatchNormalization(N * self.nOutput, self.eps)
-        bn = BatchNormalization(N * self.nOutput)
+        
+        # bn = BatchNormalization(N * self.nOutput)
+        bn = nn.BatchNorm1d(N * self.nOutput)
+        # bn = nn.InstanceNorm1d(N * self.nOutput)
         bn.batchSize = N
-        bn.weight = targetStd.data
-        bn.bias = targetMean.data
-        bn.training()
-        # print content.size(1)
-        # print bn.running_mean.nelement()
+        bn.weight = Parameter(targetStd.data)
+        bn.bias   = Parameter(targetMean.data)
+        bn.training = True
+        print(bn.weight, bn.bias)
         contentView = content.view(1, N * self.nOutput, -1)
-        print "styleView.data.size() {0}".format(styleView.data.size())
-        print "contentView.data.size() {0}".format(contentView.data.size())
-        print "targetMean.data.size() {0}".format(targetMean.data.size())
-        print "targetStd.data.size() {0}".format(targetStd.data.size())
-        out = bn.updateOutput(contentView.data)
-        out = out.view(1, 512, Hc, Wc)
-        out = Variable(out)
-        return out
+        out = bn.forward(contentView)
+        return out.view(1, 512, Hc, Wc)
 
         
         # import torch.nn.modules as modules
