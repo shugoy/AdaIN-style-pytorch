@@ -58,8 +58,8 @@ class AdaIN(nn.Module):
         targetMean = styleView.mean(2).view(-1)
         
         # bn = BatchNormalization(N * self.nOutput)
-        bn = nn.BatchNorm1d(N * self.nOutput)
-        # bn = nn.InstanceNorm1d(N * self.nOutput)
+        # bn = nn.BatchNorm1d(N * self.nOutput)
+        bn = nn.InstanceNorm1d(N * self.nOutput)
         bn.batchSize = N
         bn.weight = Parameter(targetStd.data)
         bn.bias   = Parameter(targetMean.data)
